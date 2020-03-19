@@ -1,0 +1,13 @@
+a = readtable('train_labels.csv')
+b = a(:,1);
+feature_vector = zeros(3,size(b,1));
+for i = 1:size(b,1)
+    name = string(b{i,1});
+     filename = char('images/' + name(1,1) + '.tif')
+    img = imread(filename);
+    ppi = preprocess(img);
+    f_v = watershedStart(ppi);
+    feature_vector(i) = f_v(1);
+end
+
+a =555;

@@ -1,0 +1,116 @@
+close all;
+
+img = imread('img2.tif')
+labels = applyWatershed(img);
+cells = seperateCells(img, labels);
+findRelativeCells(img, cells);
+
+%this function seperates the parts obtained from watershed segmentation and
+%puts them to cellArray
+
+%we are only looking for the middle 32x32 pixels so other results are
+%irrelevant
+function relativeCells = findRelativeCells(image, cellArray)
+relativeCells = zeros(size(image,1), size(image,2), 3,1);
+    for i = 1 : size(cellArray,4)
+        isFound = 0;
+        img = cellArray(:,:,:,i);
+        for j = size(cellArray,1) * 1/3 : size(cellArray,1) * 2/3
+            if(~isFound)
+            for k = size(cellArray,2) * 1/3 : size(cellArray,2) * 2/3
+                curRGB = image(j,k,:) 
+                 if(curRGB ~= [0 0 0]) %if there is a value assigned, than it means there a cell overlaps with the center 32x32 area
+                     x = reshape(img,size(img,1),size(img,2),size(img,3),1)
+                     cat(4,relativeCells,x);
+                     isFound = 1;
+                     fitcsvm(tbl, x);
+                     break
+                 end
+                end
+             end
+        end
+    end
+    imshow(relativeCells(:,:,:,1));
+end
+function cellArray = seperateCells(image, labels)
+    maxVal = max(labels(:));
+    cellArray = zeros(size(image,1), size(image,2), 3, (maxVal+1));
+    for i = 1 : size(image,2)
+        for j = 1 : size(image,1)
+           cellArray(j, i,:, labels(j,i)+1) = image(j,i,:);
+        end
+    end
+    
+     img = zeros(size(cellArray,2), size(cellArray,3),size(cellArray,4));
+    for i = 2:maxVal+1
+        x = size(cellArray,1)
+        x = size(cellArray,2)
+        x = size(cellArray,3)
+        x = size(cellArray,4)
+        img = cellArray(:,:,:,i);
+    end  
+end
+
+function [l] = applyWatershed(rgbimage)
+rgb = rgbimage; %read the image
+I = rgb2gray(rgb); %turn to grayscale
+
+gmag = imgradient(I); %gradient of the image
+
+ws = watershed(gmag); %normal watershed
+wsRGB = label2rgb(ws);
+
+
+%Marking the foreground objects
+    %NOTE: opening-closing and opening-closing by recounstruction are
+    %different approaches. The 2 approaches are not dependent to each other
+%opening-closing
+se = strel('disk',2);
+io = imopen(I,se);
+
+%opening by reconstruction(morphological reconstruction)
+ie = imerode(I,se);
+iobr = imreconstruct(ie,I);
+
+%opening-closing
+ioc = imclose(io,se);
+
+%opening closing by reconstruction
+iobrd = imdilate(iobr,se);
+iobrcbr = imreconstruct(imcomplement(iobrd), imcomplement(iobr));
+iobrcbr = imcomplement(iobrcbr); %normally 
+
+fgm = imregionalmin(iobrcbr); %regional minima of opening-closing by Reconstruction
+%note: if regional maximas are taken, then the white(background) objects
+%are selected, in our case this is reversed.
+
+%i2 = labeloverlay(I,fgm); %minimas are shown on the image
+
+se2 = strel(ones(1,1));
+fgm2 = imclose(fgm,se2);
+fgm3 = imerode(fgm2,se2);
+
+fgm4 = bwareaopen(fgm3,1,1);
+%i3 = labeloverlay(I,fgm4);
+
+bw = imbinarize(iobrcbr); %thresholding
+
+%watershed ridge lines created
+d = bwdist(bw); %TODO: Examine this part, the result is not correct
+dl = watershed(d);
+bgm = dl == 0; % ridge lines
+
+gmag2 = imimposemin(gmag, bgm | (fgm4)); 
+
+l = watershed(gmag2); %compute watershed
+
+labels = imdilate(l == 0, ones(1,1)) + 1*bgm + 3*fgm4;
+%i4 = labeloverlay(I, labels);
+lrgb = label2rgb(l, 'jet', 'w');
+
+figure
+imshow(I);
+hold on
+himage = imshow(lrgb);
+himage.AlphaData = 0.3;
+end
